@@ -1,0 +1,3 @@
+[submodule "api/vendor/http-from-scratch"]
+	path = api/vendor/http-from-scratch
+	url = git@github.com:jacob-horton/http-from-scratch
