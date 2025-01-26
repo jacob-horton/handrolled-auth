@@ -18,6 +18,7 @@ The stateless nature of JWTs, however, does have a disadvantage - it is hard to 
 As mentioned before, the issue with JWTs is invalidation. A token is valid until it expires. There are several ways to get around this, including blacklisting tokens, but those are not stateless. The generally accepted method is to use two tokens - the access token, and the refresh token.
 
 **Access token** - a token used to validate the user's session. If it is valid, the user can perform authenticated requests. This has a short life span (e.g. 5 minutes)
+
 **Refresh token** - a token used to generate a new access token once the current one expires. This can be used without asking the user for their credentials again. Typically, this lasts a lot longer (e.g. 1 month). Using this, we can store a version number in the token and in the database to make invalidating the session easy.
 
 With this method, if we want to invalidate the session, we can just increment the session version number in the database. Then when checking the refresh token, we can compare its version to the one in the database, and if they still match the user can stay logged in. Otherwise, they will be logged out, and have to enter credentials again to get a new access + refresh token.
