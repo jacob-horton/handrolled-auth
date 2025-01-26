@@ -1,4 +1,4 @@
-import { createResource, createSignal, Show, type Component } from "solid-js";
+import { createResource, Show, type Component } from "solid-js";
 
 import styles from "./App.module.css";
 

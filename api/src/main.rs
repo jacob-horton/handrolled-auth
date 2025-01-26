@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use std::{
     io::Write,
+    sync::RwLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 use std::{
@@ -17,29 +18,29 @@ use std::{
     time::Duration,
 };
 
-static USERS: &[User] = &[User {
-    id: "12345",
-    username: "JJ",
-    password: "passw0rd",
-}];
+static mut USERS: RwLock<Vec<User>> = RwLock::new(Vec::new());
 
 static SIGNING_KEY: &'static str = "secret";
 
-#[derive(Debug, Serialize, Deserialize)]
+static ACCESS_EXPIRATION: Duration = Duration::from_secs(5 * 60);
+static REFRESH_EXPIRATION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct User<'a> {
     id: &'a str,
     username: &'a str,
     password: &'a str,
+    session_version: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct AccessClaims {
     sub: String,
     exp: usize,
     iss: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct RefreshClaims {
     sub: String,
     exp: usize,
@@ -47,17 +48,16 @@ struct RefreshClaims {
     version: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Tokens {
     access_token: String,
     refresh_token: String,
 }
 
-fn generate_tokens(id: &str) -> Result<Tokens, ()> {
+fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
     let access_claims = AccessClaims {
         sub: id.to_string(),
-        // Expire access in 5 minutes
-        exp: (SystemTime::now() + Duration::from_secs(5 * 60))
+        exp: (SystemTime::now() + ACCESS_EXPIRATION)
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize,
@@ -74,12 +74,12 @@ fn generate_tokens(id: &str) -> Result<Tokens, ()> {
     let refresh_claims = RefreshClaims {
         sub: id.to_string(),
         // Expire refresh in 30 days
-        exp: (SystemTime::now() + Duration::from_secs(60 * 60 * 24 * 30))
+        exp: (SystemTime::now() + REFRESH_EXPIRATION)
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize,
         iss: "handrolled-auth-api".to_string(),
-        version: 1,
+        version: session_version,
     };
 
     let refresh_token = encode(
@@ -95,7 +95,7 @@ fn generate_tokens(id: &str) -> Result<Tokens, ()> {
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct LoginRequest {
     username: String,
     password: String,
@@ -110,31 +110,34 @@ fn handle_connection(mut stream: TcpStream) {
             let decoded: LoginRequest = serde_json::from_str(&req.body.unwrap()).unwrap();
 
             // TODO: better handle no user
-            let user = USERS
-                .iter()
-                .find(|u| u.username == decoded.username)
-                .expect("User not found");
+            let user = unsafe {
+                USERS
+                    .read()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .find(|u| u.username == decoded.username)
+                    .expect("User not found")
+            };
 
             // TODO: password hashing
             if user.password != decoded.password {
                 panic!("Invalid password");
             }
 
-            let tokens = generate_tokens(user.id).unwrap();
+            let tokens = generate_tokens(user.id, user.session_version).unwrap();
 
             Response {
                 version: "HTTP/1.1".to_string(),
                 status_code: Status::NoContent,
                 headers: vec![
                     // TODO: cookie settings from ben awad video
-                    // TODO: don't duplicate time period here and in jwt
                     Header {
                         name: "Set-Cookie".to_string(),
                         value: format!(
                             "access_token={}; Max-Age={}; HttpOnly",
                             tokens.access_token,
-                            // 5 minutes
-                            5 * 60,
+                            ACCESS_EXPIRATION.as_secs() * 100,
                         ),
                     },
                     Header {
@@ -142,8 +145,7 @@ fn handle_connection(mut stream: TcpStream) {
                         value: format!(
                             "refresh_token={}; Max-Age={}; HttpOnly",
                             tokens.refresh_token,
-                            // 1 month
-                            30u64 * 24 * 60 * 60,
+                            REFRESH_EXPIRATION.as_secs(),
                         ),
                     },
                     Header {
@@ -185,6 +187,22 @@ fn handle_connection(mut stream: TcpStream) {
             ],
             body: None,
         },
+        (Method::Post, "/increment-version") => {
+            unsafe {
+                USERS
+                    .write()
+                    .unwrap()
+                    .iter_mut()
+                    .for_each(|u| u.session_version += 1);
+            }
+
+            Response {
+                version: "HTTP/1.1".to_string(),
+                body: None,
+                headers: Vec::new(),
+                status_code: Status::NoContent,
+            }
+        }
         (Method::Get, "/session") => {
             let cookies = req
                 .headers
@@ -193,9 +211,10 @@ fn handle_connection(mut stream: TcpStream) {
 
             match cookies {
                 Some(cookies) => {
-                    let mut cookies = cookies.value.split("; ");
+                    let cookies = cookies.value.split("; ");
 
                     let access_token = cookies
+                        .clone()
                         .find(|cookie| cookie.starts_with("access_token="))
                         .unwrap()
                         .split_once("=")
@@ -210,7 +229,15 @@ fn handle_connection(mut stream: TcpStream) {
 
                     match token {
                         Ok(t) => {
-                            let user = USERS.iter().find(|u| u.id == t.claims.sub).unwrap();
+                            let user = unsafe {
+                                USERS
+                                    .read()
+                                    .unwrap()
+                                    .clone()
+                                    .into_iter()
+                                    .find(|u| u.id == t.claims.sub)
+                                    .unwrap()
+                            };
 
                             Response {
                                 version: "HTTP/1.1".to_string(),
@@ -231,24 +258,42 @@ fn handle_connection(mut stream: TcpStream) {
                         Err(e) => match e.kind() {
                             ErrorKind::ExpiredSignature => {
                                 let refresh_token = cookies
+                                    .clone()
                                     .find(|cookie| cookie.starts_with("refresh_token="))
                                     .unwrap()
                                     .split_once("=")
                                     .unwrap()
                                     .1;
 
+                                println!("yipyip");
+                                let mut validation = Validation::default();
+                                validation.set_issuer(&["handrolled-auth-api"]);
+
                                 // TODO: if expired, log out
-                                let claims = decode::<AccessClaims>(
+                                let claims = decode::<RefreshClaims>(
                                     refresh_token,
                                     &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
-                                    &Validation::default(),
+                                    &validation,
                                 )
                                 .unwrap()
                                 .claims;
 
                                 // TODO: reauthenticate
-                                let user = USERS.iter().find(|u| u.id == claims.sub).unwrap();
-                                let tokens = generate_tokens(user.id).unwrap();
+                                let user = unsafe {
+                                    USERS
+                                        .read()
+                                        .unwrap()
+                                        .clone()
+                                        .into_iter()
+                                        .find(|u| u.id == claims.sub)
+                                        .unwrap()
+                                };
+
+                                if claims.version != user.session_version {
+                                    panic!("Invalid session version.");
+                                }
+
+                                let tokens = generate_tokens(user.id, claims.version).unwrap();
 
                                 Response {
                                     version: "HTTP/1.1".to_string(),
@@ -267,8 +312,7 @@ fn handle_connection(mut stream: TcpStream) {
                                             value: format!(
                                                 "access_token={}; Max-Age={}; HttpOnly",
                                                 tokens.access_token,
-                                                // 5 minutes
-                                                5 * 60,
+                                                ACCESS_EXPIRATION.as_secs() * 100,
                                             ),
                                         },
                                         Header {
@@ -276,8 +320,7 @@ fn handle_connection(mut stream: TcpStream) {
                                             value: format!(
                                                 "refresh_token={}; Max-Age={}; HttpOnly",
                                                 tokens.refresh_token,
-                                                // 1 month
-                                                30u64 * 24 * 60 * 60,
+                                                REFRESH_EXPIRATION.as_secs(),
                                             ),
                                         },
                                     ],
@@ -336,6 +379,15 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn main() {
+    unsafe {
+        USERS.write().unwrap().push(User {
+            id: "12345",
+            username: "JJ",
+            password: "passw0rd",
+            session_version: 1,
+        });
+    }
+
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
 
     for stream in listener.incoming() {
