@@ -1,46 +1,82 @@
-import { type Component } from "solid-js";
+import { createResource, createSignal, Show, type Component } from "solid-js";
 
 import styles from "./App.module.css";
 
+type Session = {
+  loggedIn: boolean;
+  username?: string;
+};
+
 const App: Component = () => {
+  const [session, { refetch }] = createResource<Session>(async () => {
+    const result = await fetch("http://localhost:8080/session", {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!result.ok) {
+      return { loggedIn: false };
+    }
+
+    return {
+      loggedIn: true,
+      username: await result.text(),
+    };
+  });
+
   return (
     <div class={styles.App}>
       <header class={styles.header}>Welcome!</header>
 
-      <form
-        class={styles.form}
-        onSubmit={async (e) => {
-          e.preventDefault();
+      <Show when={session()?.loggedIn}>
+        <p>Logged in as {session()?.username}</p>
+        <button
+          class={styles.button}
+          onClick={async () => {
+            await fetch("http://localhost:8080/session", {
+              method: "DELETE",
+              credentials: "include",
+            });
 
-          await fetch("http://localhost:8080/login", {
-            method: "POST",
-            body: `{"username": "${e.target.username.value}", "password": "${e.target.password.value}"}`,
-            credentials: "include",
-          });
+            refetch();
+          }}
+        >
+          Log Out
+        </button>
+      </Show>
+      <Show when={!session()?.loggedIn}>
+        <form
+          class={styles.form}
+          onSubmit={async (e) => {
+            e.preventDefault();
 
-          await fetch("http://localhost:8080/whoami", {
-            method: "GET",
-            credentials: "include",
-          });
-        }}
-      >
-        <input
-          id="username"
-          name="username"
-          placeholder="Username"
-          class={styles.input}
-        />
+            await fetch("http://localhost:8080/session", {
+              method: "POST",
+              body: `{"username": "${e.target.username.value}", "password": "${e.target.password.value}"}`,
+              credentials: "include",
+            });
 
-        <input
-          id="password"
-          name="password"
-          placeholder="Password"
-          type="password"
-          class={styles.input}
-        />
+            refetch();
+          }}
+        >
+          <input
+            id="username"
+            name="username"
+            placeholder="Username"
+            class={styles.input}
+          />
 
-        <button class={styles.button}>Log In</button>
-      </form>
+          <input
+            id="password"
+            name="password"
+            placeholder="Password"
+            type="password"
+            class={styles.input}
+          />
+
+          <button class={styles.button}>Log In</button>
+        </form>
+      </Show>
     </div>
   );
 };

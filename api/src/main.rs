@@ -5,7 +5,7 @@ use http_from_scratch::{
     request::Request,
     response::{Response, Status},
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{decode, encode, errors::ErrorKind, DecodingKey, EncodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 use std::{
@@ -57,7 +57,7 @@ fn generate_tokens(id: &str) -> Result<Tokens, ()> {
     let access_claims = AccessClaims {
         sub: id.to_string(),
         // Expire access in 5 minutes
-        exp: (SystemTime::now() + Duration::from_secs(60 * 5))
+        exp: (SystemTime::now() + Duration::from_secs(5 * 60))
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize,
@@ -105,7 +105,8 @@ fn handle_connection(mut stream: TcpStream) {
     let req = Request::from_reader(&mut stream);
 
     let resp = match (&req.method, req.path.as_str()) {
-        (Method::Post, "/login") => {
+        // Login
+        (Method::Post, "/session") => {
             let decoded: LoginRequest = serde_json::from_str(&req.body.unwrap()).unwrap();
 
             // TODO: better handle no user
@@ -125,6 +126,7 @@ fn handle_connection(mut stream: TcpStream) {
                 version: "HTTP/1.1".to_string(),
                 status_code: Status::NoContent,
                 headers: vec![
+                    // TODO: cookie settings from ben awad video
                     // TODO: don't duplicate time period here and in jwt
                     Header {
                         name: "Set-Cookie".to_string(),
@@ -132,7 +134,7 @@ fn handle_connection(mut stream: TcpStream) {
                             "access_token={}; Max-Age={}; HttpOnly",
                             tokens.access_token,
                             // 5 minutes
-                            5 * 60 * 1000
+                            5 * 60,
                         ),
                     },
                     Header {
@@ -141,7 +143,7 @@ fn handle_connection(mut stream: TcpStream) {
                             "refresh_token={}; Max-Age={}; HttpOnly",
                             tokens.refresh_token,
                             // 1 month
-                            30u64 * 24 * 60 * 60 * 1000,
+                            30u64 * 24 * 60 * 60,
                         ),
                     },
                     Header {
@@ -156,48 +158,172 @@ fn handle_connection(mut stream: TcpStream) {
                 body: None,
             }
         }
-        (Method::Get, "/whoami") => {
-            let mut cookies = req
+        (Method::Delete, "/session") => Response {
+            version: "HTTP/1.1".to_string(),
+            status_code: Status::NoContent,
+            headers: vec![
+                Header {
+                    name: "Set-Cookie".to_string(),
+                    value: "access_token=; Max-Age=0; HttpOnly".to_string(),
+                },
+                Header {
+                    name: "Set-Cookie".to_string(),
+                    value: "access_token=; Max-Age=0; HttpOnly".to_string(),
+                },
+                Header {
+                    name: "Set-Cookie".to_string(),
+                    value: "refresh_token=; Max-Age=0; HttpOnly".to_string(),
+                },
+                Header {
+                    name: "Access-Control-Allow-Origin".to_string(),
+                    value: "http://localhost:3000".to_string(),
+                },
+                Header {
+                    name: "Access-Control-Allow-Credentials".to_string(),
+                    value: "true".to_string(),
+                },
+            ],
+            body: None,
+        },
+        (Method::Get, "/session") => {
+            let cookies = req
                 .headers
                 .iter()
-                .find(|h| h.name.to_lowercase() == "cookie")
-                .unwrap()
-                .value
-                .split("; ");
+                .find(|h| h.name.to_lowercase() == "cookie");
 
-            let access_token = cookies
-                .find(|cookie| cookie.starts_with("access_token="))
-                .unwrap()
-                .split_once("=")
-                .unwrap()
-                .1;
+            match cookies {
+                Some(cookies) => {
+                    let mut cookies = cookies.value.split("; ");
 
-            let claims = decode::<AccessClaims>(
-                access_token,
-                &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
-                &Validation::default(),
-            )
-            .unwrap()
-            .claims;
+                    let access_token = cookies
+                        .find(|cookie| cookie.starts_with("access_token="))
+                        .unwrap()
+                        .split_once("=")
+                        .unwrap()
+                        .1;
 
-            let user = USERS.iter().find(|u| u.id == claims.sub).unwrap();
+                    let token = decode::<AccessClaims>(
+                        access_token,
+                        &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
+                        &Validation::default(),
+                    );
 
-            Response {
-                version: "HTTP/1.1".to_string(),
-                status_code: Status::Ok,
-                headers: vec![
-                    Header {
-                        name: "Access-Control-Allow-Origin".to_string(),
-                        value: "http://localhost:3000".to_string(),
-                    },
-                    Header {
-                        name: "Access-Control-Allow-Credentials".to_string(),
-                        value: "true".to_string(),
-                    },
-                ],
-                body: Some(user.username.to_string()),
+                    match token {
+                        Ok(t) => {
+                            let user = USERS.iter().find(|u| u.id == t.claims.sub).unwrap();
+
+                            Response {
+                                version: "HTTP/1.1".to_string(),
+                                status_code: Status::Ok,
+                                headers: vec![
+                                    Header {
+                                        name: "Access-Control-Allow-Origin".to_string(),
+                                        value: "http://localhost:3000".to_string(),
+                                    },
+                                    Header {
+                                        name: "Access-Control-Allow-Credentials".to_string(),
+                                        value: "true".to_string(),
+                                    },
+                                ],
+                                body: Some(user.username.to_string()),
+                            }
+                        }
+                        Err(e) => match e.kind() {
+                            ErrorKind::ExpiredSignature => {
+                                let refresh_token = cookies
+                                    .find(|cookie| cookie.starts_with("refresh_token="))
+                                    .unwrap()
+                                    .split_once("=")
+                                    .unwrap()
+                                    .1;
+
+                                // TODO: if expired, log out
+                                let claims = decode::<AccessClaims>(
+                                    refresh_token,
+                                    &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
+                                    &Validation::default(),
+                                )
+                                .unwrap()
+                                .claims;
+
+                                // TODO: reauthenticate
+                                let user = USERS.iter().find(|u| u.id == claims.sub).unwrap();
+                                let tokens = generate_tokens(user.id).unwrap();
+
+                                Response {
+                                    version: "HTTP/1.1".to_string(),
+                                    status_code: Status::Ok,
+                                    headers: vec![
+                                        Header {
+                                            name: "Access-Control-Allow-Origin".to_string(),
+                                            value: "http://localhost:3000".to_string(),
+                                        },
+                                        Header {
+                                            name: "Access-Control-Allow-Credentials".to_string(),
+                                            value: "true".to_string(),
+                                        },
+                                        Header {
+                                            name: "Set-Cookie".to_string(),
+                                            value: format!(
+                                                "access_token={}; Max-Age={}; HttpOnly",
+                                                tokens.access_token,
+                                                // 5 minutes
+                                                5 * 60,
+                                            ),
+                                        },
+                                        Header {
+                                            name: "Set-Cookie".to_string(),
+                                            value: format!(
+                                                "refresh_token={}; Max-Age={}; HttpOnly",
+                                                tokens.refresh_token,
+                                                // 1 month
+                                                30u64 * 24 * 60 * 60,
+                                            ),
+                                        },
+                                    ],
+                                    body: Some(user.username.to_string()),
+                                }
+                            }
+                            _ => panic!("{e:#?}"),
+                        },
+                    }
+                }
+                None => Response {
+                    version: "HTTP/1.1".to_string(),
+                    status_code: Status::Unauthorized,
+                    headers: vec![
+                        Header {
+                            name: "Access-Control-Allow-Origin".to_string(),
+                            value: "http://localhost:3000".to_string(),
+                        },
+                        Header {
+                            name: "Access-Control-Allow-Credentials".to_string(),
+                            value: "true".to_string(),
+                        },
+                    ],
+                    body: None,
+                },
             }
         }
+        (Method::Options, _) => Response {
+            version: "HTTP/1.1".to_string(),
+            status_code: Status::Ok,
+            headers: vec![
+                Header {
+                    name: "Access-Control-Allow-Origin".to_string(),
+                    value: "http://localhost:3000".to_string(),
+                },
+                Header {
+                    name: "Access-Control-Allow-Credentials".to_string(),
+                    value: "true".to_string(),
+                },
+                Header {
+                    name: "Access-Control-Allow-Methods".to_string(),
+                    value: "GET, POST, PUT, DELETE, OPTIONS".to_string(),
+                },
+            ],
+            body: None,
+        },
         _ => Response {
             version: "HTTP/1.1".to_string(),
             status_code: Status::NotFound,
