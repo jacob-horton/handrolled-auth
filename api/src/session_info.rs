@@ -4,8 +4,8 @@ use http_from_scratch::{
 };
 
 use crate::{
+    auth::{validate_session, ACCESS_EXPIRATION, REFRESH_EXPIRATION},
     db::USERS,
-    tokens::{validate_session, ACCESS_EXPIRATION, REFRESH_EXPIRATION},
 };
 
 pub fn session_info(req: Request) -> Response {
@@ -23,21 +23,21 @@ pub fn session_info(req: Request) -> Response {
             };
 
             let mut resp = Response::new(Status::Ok)
-                .with_cors("http://localhost:3000".to_string())
-                .with_body(user.username.to_string());
+                .with_cors("http://localhost:3000")
+                .with_body(user.username);
 
             // Update tokens if there are new ones
             if let Some(tokens) = session.new_tokens {
                 resp = resp
                     .with_cookie(
-                        "access_token".to_string(),
-                        tokens.access_token,
+                        "access_token",
+                        &tokens.access_token,
                         ACCESS_EXPIRATION.as_secs(),
                         true,
                     )
                     .with_cookie(
-                        "refresh_token".to_string(),
-                        tokens.refresh_token,
+                        "refresh_token",
+                        &tokens.refresh_token,
                         REFRESH_EXPIRATION.as_secs(),
                         true,
                     );
@@ -45,8 +45,6 @@ pub fn session_info(req: Request) -> Response {
 
             resp
         }
-        Err(_) => {
-            Response::new(Status::Unauthorized).with_cors("http://localhost:3000".to_string())
-        }
+        Err(_) => Response::new(Status::Unauthorized).with_cors("http://localhost:3000"),
     }
 }

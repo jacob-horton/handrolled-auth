@@ -1,10 +1,10 @@
 extern crate http_from_scratch;
 
+mod auth;
 mod db;
 mod login;
 mod logout;
 mod session_info;
-mod tokens;
 
 use db::{User, USERS};
 use http_from_scratch::{
@@ -37,15 +37,15 @@ fn handle_connection(mut stream: TcpStream) {
                     .for_each(|u| u.session_version += 1);
             }
 
-            Response::new(Status::NoContent).with_cors("http://localhost:3000".to_string())
+            Response::new(Status::NoContent).with_cors("http://localhost:3000")
         }
         (Method::Options, _) => Response::new(Status::Ok)
-            .with_cors("http://localhost:3000".to_string())
+            .with_cors("http://localhost:3000")
             .with_header(
-                "Access-Control-Allow-Methods".to_string(),
-                "GET, POST, PUT, DELETE, OPTIONS".to_string(),
+                "Access-Control-Allow-Methods",
+                "GET, POST, PUT, DELETE, OPTIONS",
             ),
-        _ => Response::new(Status::NotFound).with_cors("http://localhost:3000".to_string()),
+        _ => Response::new(Status::NotFound).with_cors("http://localhost:3000"),
     };
 
     stream.write_all(resp.to_string().as_bytes()).unwrap();

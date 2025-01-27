@@ -1,6 +1,7 @@
 use http_from_scratch::common::Header;
 use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Validation};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
 use std::time::Duration;
@@ -9,6 +10,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::db::USERS;
 
 static SIGNING_KEY: &'static str = "secret";
+
+static ISSUER: &'static str = "handrolled-auth-api";
+lazy_static! {
+    static ref VALIDATION: Validation = {
+        let mut val = Validation::default();
+        val.set_issuer(&[ISSUER]);
+        val
+    };
+}
 
 // static ACCESS_EXPIRATION: Duration = Duration::from_secs(5 * 60);
 pub static ACCESS_EXPIRATION: Duration = Duration::from_secs(5);
@@ -35,6 +45,20 @@ pub struct Tokens {
     pub refresh_token: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub user_id: String,
+    pub new_tokens: Option<Tokens>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SessionError {
+    AccessExpired,
+    MissingCookies,
+    MissingOrInvalidAccessCookie,
+    InvalidToken,
+}
+
 pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
     let access_claims = AccessClaims {
         sub: id.to_string(),
@@ -42,7 +66,7 @@ pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize,
-        iss: "handrolled-auth-api".to_string(),
+        iss: ISSUER.to_string(),
     };
 
     let access_token = encode(
@@ -58,7 +82,7 @@ pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize,
-        iss: "handrolled-auth-api".to_string(),
+        iss: ISSUER.to_string(),
         version: session_version,
     };
 
@@ -84,28 +108,11 @@ fn get_cookie<'a>(cookies: &Vec<&'a str>, name: &str) -> Option<&'a str> {
         .flatten()
 }
 
-pub struct Session {
-    pub user_id: String,
-    pub new_tokens: Option<Tokens>,
-}
-
-pub enum SessionError {
-    AccessExpired,
-    MissingCookies,
-    MissingOrInvalidAccessCookie,
-    InvalidToken,
-}
-
 fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError> {
     let cookies = headers
         .iter()
         .find(|h| h.name.to_lowercase() == "cookie")
         .ok_or(SessionError::MissingCookies)?;
-
-    // TODO: make this static
-    let mut validation = Validation::default();
-    // TODO: static issuer constant
-    validation.set_issuer(&["handrolled-auth-api"]);
 
     let cookies: Vec<_> = cookies.value.split("; ").collect();
     let access_token =
@@ -114,7 +121,7 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
     let token = decode::<AccessClaims>(
         access_token,
         &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
-        &validation,
+        &VALIDATION,
     );
 
     match token {
@@ -143,11 +150,6 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
 
 // TODO: different errors
 pub fn validate_session(headers: &Vec<Header>) -> Result<Session, ()> {
-    // TODO: make this static
-    let mut validation = Validation::default();
-    // TODO: static issuer constant
-    validation.set_issuer(&["handrolled-auth-api"]);
-
     // TODO: reduce lookup of cookies
     match validate_access_token(headers) {
         Ok(session) => return Ok(session),
@@ -163,7 +165,7 @@ pub fn validate_session(headers: &Vec<Header>) -> Result<Session, ()> {
             let claims = decode::<RefreshClaims>(
                 refresh_token,
                 &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
-                &validation,
+                &VALIDATION,
             )
             .or(Err(()))?
             .claims;

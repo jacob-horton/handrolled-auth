@@ -51,6 +51,7 @@ The front-end is a very simple login page, using typescript and SolidJS.
 
 The back-end is written in Rust. I am using my own HTTP library that I built from scratch ([see here](https://github.com/jacob-horton/http-from-scratch)).
 
-I am only using 3 other libraries:
+I am only using 4 other libraries:
 - `jsonwebtoken` to encode/decode and validate JWTs
+- `lazy_static` to create static variables that are lazily evaluated
 - `serde` + `serde_json` to serialise/deserialise JSON and JWT data
