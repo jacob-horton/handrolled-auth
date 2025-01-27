@@ -1,6 +1,7 @@
 use http_from_scratch::{
     request::Request,
     response::{Response, Status},
+    router::Params,
 };
 use serde::Deserialize;
 
@@ -15,7 +16,7 @@ struct LoginRequest {
     password: String,
 }
 
-pub fn login<T: UserDatabase>(req: Request, db: &T) -> Response {
+pub fn login(req: Request, _: &Params, db: &dyn UserDatabase) -> Response {
     let decoded: LoginRequest = serde_json::from_str(&req.body.unwrap()).unwrap();
 
     let user = match db.get_user_by_username(&decoded.username) {

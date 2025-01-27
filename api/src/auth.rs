@@ -138,7 +138,7 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
 }
 
 // TODO: different errors
-pub fn validate_session<T: UserDatabase>(headers: &Vec<Header>, db: &T) -> Result<Session, ()> {
+pub fn validate_session(headers: &Vec<Header>, db: &dyn UserDatabase) -> Result<Session, ()> {
     // TODO: reduce lookup of cookies
     match validate_access_token(headers) {
         Ok(session) => return Ok(session),

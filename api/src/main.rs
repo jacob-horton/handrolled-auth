@@ -12,6 +12,7 @@ use http_from_scratch::{
     common::Method,
     request::Request,
     response::{Response, Status},
+    router::{Params, RouteMatch, Router},
 };
 use login::login;
 use logout::logout;
@@ -19,36 +20,27 @@ use password_hash::{PasswordHasher, SaltString};
 use rand::rngs::OsRng;
 use session_info::session_info;
 
-use std::{
-    io::Write,
-    net::{TcpListener, TcpStream},
-};
+use std::{io::Write, net::TcpListener};
 
-fn handle_connection<T: UserDatabase>(mut stream: TcpStream, db: &T) {
-    let req = Request::from_reader(&mut stream);
-
-    let resp = match (&req.method, req.path.as_str()) {
-        (Method::Post, "/session") => login(req, db),
-        (Method::Delete, "/session") => logout(req),
-        (Method::Get, "/session") => session_info(req, db),
-        (Method::Post, "/increment-version") => {
-            // TODO: take id
-            db.invalidate_user_sessions("12345");
-            Response::new(Status::NoContent).with_cors("http://localhost:3000")
-        }
-        (Method::Options, _) => Response::new(Status::Ok)
-            .with_cors("http://localhost:3000")
-            .with_header(
-                "Access-Control-Allow-Methods",
-                "GET, POST, PUT, DELETE, OPTIONS",
-            ),
-        _ => Response::new(Status::NotFound).with_cors("http://localhost:3000"),
-    };
-
-    stream.write_all(resp.to_string().as_bytes()).unwrap();
+fn invalidate_session(_: Request, params: &Params, db: &dyn UserDatabase) -> Response {
+    db.invalidate_user_sessions(params.get("id").unwrap());
+    Response::new(Status::NoContent).with_cors("http://localhost:3000")
 }
 
-fn setup_user<T: UserDatabase>(db: &T) {
+fn options(_: Request, params: &Params, _: &dyn UserDatabase) -> Response {
+    Response::new(Status::Ok)
+        .with_cors("http://localhost:3000")
+        .with_header(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PUT, DELETE, OPTIONS",
+        )
+}
+
+fn not_found(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
+    Response::new(Status::NotFound).with_cors("http://localhost:3000")
+}
+
+fn setup_user(db: &dyn UserDatabase) {
     let salt = SaltString::generate(OsRng::default());
     let hash = Argon2::default()
         .hash_password("passw0rd".as_bytes(), &salt)
@@ -66,9 +58,28 @@ fn main() {
     let db = Database::new();
     setup_user(&db);
 
+    let mut router = Router::new();
+    router.add(Method::Post, "/session", login);
+    router.add(Method::Delete, "/session", logout);
+    router.add(Method::Get, "/session", session_info);
+    router.add(Method::Delete, "/user/:id/session", invalidate_session);
+    router.add(Method::Options, "*", options);
+
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        handle_connection(stream, &db);
+        let mut stream = stream.unwrap();
+        let req = Request::from_reader(&mut stream);
+
+        let route = router
+            .recognise(&req.method, &req.path)
+            .unwrap_or(RouteMatch {
+                handler: not_found,
+                params: Params::new(),
+            });
+
+        let handler = route.handler;
+        let resp = handler(req, &route.params, &db);
+
+        stream.write_all(resp.to_string().as_bytes()).unwrap();
     }
 }
