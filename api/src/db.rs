@@ -34,9 +34,9 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Self {
-        return Database {
+        Database {
             users: RwLock::new(Vec::new()),
-        };
+        }
     }
 }
 
@@ -46,7 +46,7 @@ impl UserDatabase for Database {
         let user = lock.iter().find(|u| u.id == id);
 
         // Clone user if they exist
-        return user.map(|u| u.clone());
+        user.cloned()
     }
 
     fn add_user(&self, user: User) {
@@ -68,6 +68,6 @@ impl UserDatabase for Database {
         let user = lock.iter().find(|u| u.username == username);
 
         // Clone user if they exist
-        return user.map(|u| u.clone());
+        user.cloned()
     }
 }

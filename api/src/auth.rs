@@ -9,9 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::db::UserDatabase;
 
-static SIGNING_KEY: &'static str = "secret";
+static SIGNING_KEY: &str = "secret";
 
-static ISSUER: &'static str = "handrolled-auth-api";
+static ISSUER: &str = "handrolled-auth-api";
 lazy_static! {
     static ref VALIDATION: Validation = {
         let mut val = Validation::default();
@@ -110,10 +110,10 @@ fn validate_access_token(req: &Request) -> Result<Session, SessionError> {
 
     match token {
         Ok(t) => {
-            return Ok(Session {
+            Ok(Session {
                 user_id: t.claims.sub,
                 new_tokens: None,
-            });
+            })
         }
         Err(e) => match e.kind() {
             ErrorKind::ExpiredSignature => Err(SessionError::AccessExpired),
@@ -125,7 +125,7 @@ fn validate_access_token(req: &Request) -> Result<Session, SessionError> {
 // TODO: different errors
 pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session, ()> {
     match validate_access_token(req) {
-        Ok(session) => return Ok(session),
+        Ok(session) => Ok(session),
         Err(SessionError::MissingOrInvalidAccessCookie) | Err(SessionError::AccessExpired) => {
             let refresh_token = req.get_cookie("refresh_token").ok_or(())?;
 
@@ -144,11 +144,11 @@ pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session,
 
             let tokens = generate_tokens(&user.id, claims.version).unwrap();
 
-            return Ok(Session {
+            Ok(Session {
                 user_id: user.id.to_string(),
                 new_tokens: Some(tokens),
-            });
+            })
         }
-        _ => return Err(()),
-    };
+        _ => Err(()),
+    }
 }

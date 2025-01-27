@@ -38,7 +38,7 @@ pub fn login(req: Request, _: &Params, db: &dyn UserDatabase) -> Response {
 
     let tokens = generate_tokens(&user.id, user.session_version).unwrap();
 
-    return Response::new(Status::NoContent)
+    Response::new(Status::NoContent)
         .with_cors("http://localhost:3000")
         .with_cookie(
             "access_token",
@@ -51,5 +51,5 @@ pub fn login(req: Request, _: &Params, db: &dyn UserDatabase) -> Response {
             &tokens.refresh_token,
             REFRESH_EXPIRATION.as_secs(),
             true,
-        );
+        )
 }

@@ -41,7 +41,7 @@ fn not_found(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
 }
 
 fn setup_user(db: &dyn UserDatabase) {
-    let salt = SaltString::generate(OsRng::default());
+    let salt = SaltString::generate(OsRng);
     let hash = Argon2::default()
         .hash_password("passw0rd".as_bytes(), &salt)
         .unwrap();
