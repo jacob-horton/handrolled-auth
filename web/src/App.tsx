@@ -60,6 +60,8 @@ const App: Component = () => {
               refetch();
             } else if (res.status == 401) {
               alert("Invalid password");
+            } else if (res.status == 404) {
+              alert("Unknown user");
             } else {
               console.error(res.text());
             }

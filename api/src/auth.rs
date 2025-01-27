@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::db::USERS;
+use crate::db::UserDatabase;
 
 static SIGNING_KEY: &'static str = "secret";
 
@@ -20,8 +20,7 @@ lazy_static! {
     };
 }
 
-// static ACCESS_EXPIRATION: Duration = Duration::from_secs(5 * 60);
-pub static ACCESS_EXPIRATION: Duration = Duration::from_secs(5);
+pub static ACCESS_EXPIRATION: Duration = Duration::from_secs(5 * 60);
 pub static REFRESH_EXPIRATION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,18 +125,8 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
 
     match token {
         Ok(t) => {
-            let user = unsafe {
-                USERS
-                    .read()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .find(|u| u.id == t.claims.sub)
-                    .unwrap()
-            };
-
             return Ok(Session {
-                user_id: user.id.to_string(),
+                user_id: t.claims.sub,
                 new_tokens: None,
             });
         }
@@ -149,7 +138,7 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
 }
 
 // TODO: different errors
-pub fn validate_session(headers: &Vec<Header>) -> Result<Session, ()> {
+pub fn validate_session<T: UserDatabase>(headers: &Vec<Header>, db: &T) -> Result<Session, ()> {
     // TODO: reduce lookup of cookies
     match validate_access_token(headers) {
         Ok(session) => return Ok(session),
@@ -170,17 +159,7 @@ pub fn validate_session(headers: &Vec<Header>) -> Result<Session, ()> {
             .or(Err(()))?
             .claims;
 
-            // TODO: check session is valid, password is correct etc.
-            let user = unsafe {
-                USERS
-                    .read()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .find(|u| u.id == claims.sub)
-                    .unwrap()
-            };
-
+            let user = db.get_user_by_id(&claims.sub).expect("User not found");
             if claims.version != user.session_version {
                 return Err(());
             }

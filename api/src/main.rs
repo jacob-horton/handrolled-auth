@@ -7,7 +7,7 @@ mod logout;
 mod session_info;
 
 use argon2::Argon2;
-use db::{User, USERS};
+use db::{Database, User, UserDatabase};
 use http_from_scratch::{
     common::Method,
     request::Request,
@@ -24,22 +24,16 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection<T: UserDatabase>(mut stream: TcpStream, db: &T) {
     let req = Request::from_reader(&mut stream);
 
     let resp = match (&req.method, req.path.as_str()) {
-        (Method::Post, "/session") => login(req),
+        (Method::Post, "/session") => login(req, db),
         (Method::Delete, "/session") => logout(req),
-        (Method::Get, "/session") => session_info(req),
+        (Method::Get, "/session") => session_info(req, db),
         (Method::Post, "/increment-version") => {
-            unsafe {
-                USERS
-                    .write()
-                    .unwrap()
-                    .iter_mut()
-                    .for_each(|u| u.session_version += 1);
-            }
-
+            // TODO: take id
+            db.invalidate_user_sessions("12345");
             Response::new(Status::NoContent).with_cors("http://localhost:3000")
         }
         (Method::Options, _) => Response::new(Status::Ok)
@@ -54,28 +48,27 @@ fn handle_connection(mut stream: TcpStream) {
     stream.write_all(resp.to_string().as_bytes()).unwrap();
 }
 
-fn setup_user() {
+fn setup_user<T: UserDatabase>(db: &T) {
     let salt = SaltString::generate(OsRng::default());
     let hash = Argon2::default()
         .hash_password("passw0rd".as_bytes(), &salt)
         .unwrap();
 
-    unsafe {
-        USERS.write().unwrap().push(User {
-            id: "12345".to_string(),
-            username: "JJ".to_string(),
-            password_hash: hash.to_string(),
-            session_version: 1,
-        });
-    }
+    db.add_user(User {
+        id: "12345".to_string(),
+        username: "JJ".to_string(),
+        password_hash: hash.to_string(),
+        session_version: 1,
+    });
 }
 
 fn main() {
-    setup_user();
+    let db = Database::new();
+    setup_user(&db);
 
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream);
+        handle_connection(stream, &db);
     }
 }

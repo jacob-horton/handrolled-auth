@@ -5,22 +5,13 @@ use http_from_scratch::{
 
 use crate::{
     auth::{validate_session, ACCESS_EXPIRATION, REFRESH_EXPIRATION},
-    db::USERS,
+    db::UserDatabase,
 };
 
-pub fn session_info(req: Request) -> Response {
-    let result = validate_session(&req.headers);
-    match result {
+pub fn session_info<T: UserDatabase>(req: Request, db: &T) -> Response {
+    match validate_session(&req.headers, db) {
         Ok(session) => {
-            let user = unsafe {
-                USERS
-                    .read()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .find(|u| u.id == session.user_id)
-                    .unwrap()
-            };
+            let user = db.get_user_by_id(&session.user_id).expect("User not found");
 
             let mut resp = Response::new(Status::Ok)
                 .with_cors("http://localhost:3000")
