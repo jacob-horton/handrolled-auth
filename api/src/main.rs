@@ -27,7 +27,7 @@ fn invalidate_session(_: Request, params: &Params, db: &dyn UserDatabase) -> Res
     Response::new(Status::NoContent).with_cors("http://localhost:3000")
 }
 
-fn options(_: Request, params: &Params, _: &dyn UserDatabase) -> Response {
+fn options(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
     Response::new(Status::Ok)
         .with_cors("http://localhost:3000")
         .with_header(

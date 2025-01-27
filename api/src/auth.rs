@@ -1,4 +1,4 @@
-use http_from_scratch::common::Header;
+use http_from_scratch::request::Request;
 use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Validation};
 use lazy_static::lazy_static;
@@ -53,7 +53,6 @@ pub struct Session {
 #[derive(Debug, Clone)]
 pub enum SessionError {
     AccessExpired,
-    MissingCookies,
     MissingOrInvalidAccessCookie,
     InvalidToken,
 }
@@ -98,27 +97,13 @@ pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
     })
 }
 
-// TODO: return errors - not found vs incorrectly formatted
-fn get_cookie<'a>(cookies: &Vec<&'a str>, name: &str) -> Option<&'a str> {
-    cookies
-        .iter()
-        .find(|cookie| cookie.starts_with(&format!("{name}=")))
-        .map(|x| x.split_once("=").map(|c| c.1))
-        .flatten()
-}
-
-fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError> {
-    let cookies = headers
-        .iter()
-        .find(|h| h.name.to_lowercase() == "cookie")
-        .ok_or(SessionError::MissingCookies)?;
-
-    let cookies: Vec<_> = cookies.value.split("; ").collect();
-    let access_token =
-        get_cookie(&cookies, "access_token").ok_or(SessionError::MissingOrInvalidAccessCookie)?;
+fn validate_access_token(req: &Request) -> Result<Session, SessionError> {
+    let access_token = req
+        .get_cookie("access_token")
+        .ok_or(SessionError::MissingOrInvalidAccessCookie)?;
 
     let token = decode::<AccessClaims>(
-        access_token,
+        &access_token,
         &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
         &VALIDATION,
     );
@@ -138,21 +123,14 @@ fn validate_access_token(headers: &Vec<Header>) -> Result<Session, SessionError>
 }
 
 // TODO: different errors
-pub fn validate_session(headers: &Vec<Header>, db: &dyn UserDatabase) -> Result<Session, ()> {
-    // TODO: reduce lookup of cookies
-    match validate_access_token(headers) {
+pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session, ()> {
+    match validate_access_token(req) {
         Ok(session) => return Ok(session),
         Err(SessionError::MissingOrInvalidAccessCookie) | Err(SessionError::AccessExpired) => {
-            let cookies = headers
-                .iter()
-                .find(|h| h.name.to_lowercase() == "cookie")
-                .ok_or(())?;
-
-            let cookies: Vec<_> = cookies.value.split("; ").collect();
-            let refresh_token = get_cookie(&cookies, "refresh_token").ok_or(())?;
+            let refresh_token = req.get_cookie("refresh_token").ok_or(())?;
 
             let claims = decode::<RefreshClaims>(
-                refresh_token,
+                &refresh_token,
                 &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
                 &VALIDATION,
             )
