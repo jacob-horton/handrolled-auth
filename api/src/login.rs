@@ -1,3 +1,4 @@
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use http_from_scratch::{
     request::Request,
     response::{Response, Status},
@@ -29,12 +30,17 @@ pub fn login(req: Request) -> Response {
             .expect("User not found")
     };
 
-    // TODO: password hashing
-    if user.password != decoded.password {
-        panic!("Invalid password");
+    let parsed_hash = PasswordHash::new(&user.password_hash).unwrap();
+    if !Argon2::default()
+        .verify_password(decoded.password.as_ref(), &parsed_hash)
+        .is_ok()
+    {
+        return Response::new(Status::Unauthorized)
+            .with_cors("http://localhost:3000")
+            .with_body("Invalid password");
     }
 
-    let tokens = generate_tokens(user.id, user.session_version).unwrap();
+    let tokens = generate_tokens(&user.id, user.session_version).unwrap();
 
     Response::new(Status::NoContent)
         .with_cors("http://localhost:3000")

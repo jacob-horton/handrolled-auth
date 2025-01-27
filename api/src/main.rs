@@ -6,6 +6,7 @@ mod login;
 mod logout;
 mod session_info;
 
+use argon2::Argon2;
 use db::{User, USERS};
 use http_from_scratch::{
     common::Method,
@@ -14,6 +15,8 @@ use http_from_scratch::{
 };
 use login::login;
 use logout::logout;
+use password_hash::{PasswordHasher, SaltString};
+use rand::rngs::OsRng;
 use session_info::session_info;
 
 use std::{
@@ -51,18 +54,26 @@ fn handle_connection(mut stream: TcpStream) {
     stream.write_all(resp.to_string().as_bytes()).unwrap();
 }
 
-fn main() {
+fn setup_user() {
+    let salt = SaltString::generate(OsRng::default());
+    let hash = Argon2::default()
+        .hash_password("passw0rd".as_bytes(), &salt)
+        .unwrap();
+
     unsafe {
         USERS.write().unwrap().push(User {
-            id: "12345",
-            username: "JJ",
-            password: "passw0rd",
+            id: "12345".to_string(),
+            username: "JJ".to_string(),
+            password_hash: hash.to_string(),
             session_version: 1,
         });
     }
+}
+
+fn main() {
+    setup_user();
 
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         handle_connection(stream);

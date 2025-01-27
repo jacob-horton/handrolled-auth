@@ -50,13 +50,19 @@ const App: Component = () => {
           onSubmit={async (e) => {
             e.preventDefault();
 
-            await fetch("http://localhost:8080/session", {
+            const res = await fetch("http://localhost:8080/session", {
               method: "POST",
               body: `{"username": "${e.target.username.value}", "password": "${e.target.password.value}"}`,
               credentials: "include",
             });
 
-            refetch();
+            if (res.ok) {
+              refetch();
+            } else if (res.status == 401) {
+              alert("Invalid password");
+            } else {
+              console.error(res.text());
+            }
           }}
         >
           <input

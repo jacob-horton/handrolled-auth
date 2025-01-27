@@ -185,7 +185,7 @@ pub fn validate_session(headers: &Vec<Header>) -> Result<Session, ()> {
                 return Err(());
             }
 
-            let tokens = generate_tokens(user.id, claims.version).unwrap();
+            let tokens = generate_tokens(&user.id, claims.version).unwrap();
 
             return Ok(Session {
                 user_id: user.id.to_string(),

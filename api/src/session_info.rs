@@ -24,7 +24,7 @@ pub fn session_info(req: Request) -> Response {
 
             let mut resp = Response::new(Status::Ok)
                 .with_cors("http://localhost:3000")
-                .with_body(user.username);
+                .with_body(&user.username);
 
             // Update tokens if there are new ones
             if let Some(tokens) = session.new_tokens {
