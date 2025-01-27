@@ -51,10 +51,18 @@ pub struct Session {
 }
 
 #[derive(Debug, Clone)]
-pub enum SessionError {
+enum InternalSessionError {
     AccessExpired,
     MissingOrInvalidAccessCookie,
     InvalidToken,
+}
+
+#[derive(Debug, Clone)]
+pub enum SessionError {
+    MissingRefreshToken,
+    InvalidRefreshToken,
+    ManuallyInvalidatedRefreshToken,
+    InvalidAccessToken,
 }
 
 pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
@@ -97,10 +105,10 @@ pub fn generate_tokens(id: &str, session_version: usize) -> Result<Tokens, ()> {
     })
 }
 
-fn validate_access_token(req: &Request) -> Result<Session, SessionError> {
+fn validate_access_token(req: &Request) -> Result<Session, InternalSessionError> {
     let access_token = req
         .get_cookie("access_token")
-        .ok_or(SessionError::MissingOrInvalidAccessCookie)?;
+        .ok_or(InternalSessionError::MissingOrInvalidAccessCookie)?;
 
     let token = decode::<AccessClaims>(
         &access_token,
@@ -109,37 +117,37 @@ fn validate_access_token(req: &Request) -> Result<Session, SessionError> {
     );
 
     match token {
-        Ok(t) => {
-            Ok(Session {
-                user_id: t.claims.sub,
-                new_tokens: None,
-            })
-        }
+        Ok(t) => Ok(Session {
+            user_id: t.claims.sub,
+            new_tokens: None,
+        }),
         Err(e) => match e.kind() {
-            ErrorKind::ExpiredSignature => Err(SessionError::AccessExpired),
-            _ => Err(SessionError::InvalidToken),
+            ErrorKind::ExpiredSignature => Err(InternalSessionError::AccessExpired),
+            _ => Err(InternalSessionError::InvalidToken),
         },
     }
 }
 
-// TODO: different errors
-pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session, ()> {
+pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session, SessionError> {
     match validate_access_token(req) {
         Ok(session) => Ok(session),
-        Err(SessionError::MissingOrInvalidAccessCookie) | Err(SessionError::AccessExpired) => {
-            let refresh_token = req.get_cookie("refresh_token").ok_or(())?;
+        Err(InternalSessionError::MissingOrInvalidAccessCookie)
+        | Err(InternalSessionError::AccessExpired) => {
+            let refresh_token = req
+                .get_cookie("refresh_token")
+                .ok_or(SessionError::MissingRefreshToken)?;
 
             let claims = decode::<RefreshClaims>(
                 &refresh_token,
                 &DecodingKey::from_secret(SIGNING_KEY.as_ref()),
                 &VALIDATION,
             )
-            .or(Err(()))?
+            .or(Err(SessionError::InvalidRefreshToken))?
             .claims;
 
             let user = db.get_user_by_id(&claims.sub).expect("User not found");
             if claims.version != user.session_version {
-                return Err(());
+                return Err(SessionError::ManuallyInvalidatedRefreshToken);
             }
 
             let tokens = generate_tokens(&user.id, claims.version).unwrap();
@@ -149,6 +157,6 @@ pub fn validate_session(req: &Request, db: &dyn UserDatabase) -> Result<Session,
                 new_tokens: Some(tokens),
             })
         }
-        _ => Err(()),
+        _ => Err(SessionError::InvalidAccessToken),
     }
 }
