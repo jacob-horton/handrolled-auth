@@ -9,8 +9,8 @@ use crate::{
     db::UserDatabase,
 };
 
-pub fn session_info(req: Request, _: &Params, db: &dyn UserDatabase) -> Response {
-    match validate_session(&req, db) {
+pub fn session_info(req: Request, _: &Params, db: &&dyn UserDatabase) -> Response {
+    match validate_session(&req, *db) {
         Ok(session) => {
             let user = db.get_user_by_id(&session.user_id).expect("User not found");
 

@@ -6,7 +6,7 @@ use http_from_scratch::{
 
 use crate::db::UserDatabase;
 
-pub fn logout(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
+pub fn logout(_: Request, _: &Params, _: &&dyn UserDatabase) -> Response {
     Response::new(Status::NoContent)
         .with_cors("http://localhost:3000")
         .with_cookie("access_token", "", 0, true)

@@ -12,7 +12,7 @@ use http_from_scratch::{
     common::Method,
     request::Request,
     response::{Response, Status},
-    router::{Params, RouteMatch, Router},
+    router::{Params, Router},
 };
 use login::login;
 use logout::logout;
@@ -22,22 +22,18 @@ use session_info::session_info;
 
 use std::{io::Write, net::TcpListener};
 
-fn invalidate_session(_: Request, params: &Params, db: &dyn UserDatabase) -> Response {
+fn invalidate_session(_: Request, params: &Params, db: &&dyn UserDatabase) -> Response {
     db.invalidate_user_sessions(params.get("id").unwrap());
     Response::new(Status::NoContent).with_cors("http://localhost:3000")
 }
 
-fn options(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
+fn options(_: Request, _: &Params, _: &&dyn UserDatabase) -> Response {
     Response::new(Status::Ok)
         .with_cors("http://localhost:3000")
         .with_header(
             "Access-Control-Allow-Methods",
             "GET, POST, PUT, DELETE, OPTIONS",
         )
-}
-
-fn not_found(_: Request, _: &Params, _: &dyn UserDatabase) -> Response {
-    Response::new(Status::NotFound).with_cors("http://localhost:3000")
 }
 
 fn setup_user(db: &dyn UserDatabase) {
@@ -58,7 +54,7 @@ fn main() {
     let db = Database::new();
     setup_user(&db);
 
-    let mut router = Router::new();
+    let mut router = Router::<&dyn UserDatabase>::new(&db);
     router.add(Method::Post, "/session", login);
     router.add(Method::Delete, "/session", logout);
     router.add(Method::Get, "/session", session_info);
@@ -70,15 +66,9 @@ fn main() {
         let mut stream = stream.unwrap();
         let req = Request::from_reader(&mut stream);
 
-        let route = router
-            .recognise(&req.method, &req.path)
-            .unwrap_or(RouteMatch {
-                handler: not_found,
-                params: Params::new(),
-            });
-
-        let handler = route.handler;
-        let resp = handler(req, &route.params, &db);
+        let resp = router
+            .handle(req)
+            .unwrap_or(Response::new(Status::NotFound).with_cors("http://localhost:3000"));
 
         stream.write_all(resp.to_string().as_bytes()).unwrap();
     }
