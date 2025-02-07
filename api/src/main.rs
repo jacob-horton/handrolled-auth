@@ -2,30 +2,24 @@ extern crate http_from_scratch;
 
 mod auth;
 mod db;
-mod login;
-mod logout;
-mod session_info;
+mod endpoints;
 
 use argon2::Argon2;
 use db::{Database, User, UserDatabase};
+use endpoints::{
+    invalidate_session::invalidate_session, login::login, logout::logout,
+    session_info::session_info,
+};
 use http_from_scratch::{
     common::Method,
     request::Request,
     response::{Response, Status},
     router::{Params, Router},
 };
-use login::login;
-use logout::logout;
 use password_hash::{PasswordHasher, SaltString};
 use rand::rngs::OsRng;
-use session_info::session_info;
 
 use std::{io::Write, net::TcpListener};
-
-fn invalidate_session(_: Request, params: &Params, db: &&dyn UserDatabase) -> Response {
-    db.invalidate_user_sessions(params.get("id").unwrap());
-    Response::new(Status::NoContent).with_cors("http://localhost:3000")
-}
 
 fn options(_: Request, _: &Params, _: &&dyn UserDatabase) -> Response {
     Response::new(Status::Ok)

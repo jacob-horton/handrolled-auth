@@ -77,5 +77,24 @@ npm run dev
 Go to [http://localhost:3000](http://localhost:3000)
 
 Demo credentials are:
+
+```
 Username: JJ
 Password: passw0rd
+```
+
+
+# Project Structure
+
+```
+- web/
+  - src/
+    - App.tsx - all the important front-end code
+- api/
+  - src/
+    - endpoints/ - each endpoint has its own file
+    - auth.rs - handles generating/validating tokens/sessions
+    - db.rs - contains the "database", which stores users, and checks their passwords
+    - main.rs - sets up the HTTP server
+```
+
