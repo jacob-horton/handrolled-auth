@@ -56,3 +56,26 @@ I have tried to keep the libraries minimal. Here is what I'm using:
 - `lazy_static` to create static variables that are lazily evaluated
 - `serde` + `serde_json` to serialise/deserialise JSON and JWT data
 - `argon2` + `password-hash` + `rand` to salt and hash passwords
+
+
+# Running Locally
+
+Run the server:
+
+```bash
+cd api
+cargo run
+```
+
+Run the client:
+
+```bash
+cd web
+npm run dev
+```
+
+Go to [http://localhost:3000](http://localhost:3000)
+
+Demo credentials are:
+Username: JJ
+Password: passw0rd
