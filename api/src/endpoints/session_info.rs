@@ -4,10 +4,7 @@ use http_from_scratch::{
     router::Params,
 };
 
-use crate::{
-    auth::{validate_session, ACCESS_EXPIRATION, REFRESH_EXPIRATION},
-    db::UserDatabase,
-};
+use crate::{auth::validate_session, db::UserDatabase};
 
 pub fn session_info(req: Request, _: &Params, db: &&dyn UserDatabase) -> Response {
     match validate_session(&req, *db) {
@@ -24,13 +21,13 @@ pub fn session_info(req: Request, _: &Params, db: &&dyn UserDatabase) -> Respons
                     .with_cookie(
                         "access_token",
                         &tokens.access_token,
-                        ACCESS_EXPIRATION.as_secs(),
+                        1000 * 60 * 60 * 24 * 365 * 10, // 10 years
                         true,
                     )
                     .with_cookie(
                         "refresh_token",
                         &tokens.refresh_token,
-                        REFRESH_EXPIRATION.as_secs(),
+                        1000 * 60 * 60 * 24 * 365 * 10, // 10 years
                         true,
                     );
             }

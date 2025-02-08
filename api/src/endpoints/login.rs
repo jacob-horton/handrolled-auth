@@ -5,10 +5,7 @@ use http_from_scratch::{
 };
 use serde::Deserialize;
 
-use crate::{
-    auth::{generate_tokens, ACCESS_EXPIRATION, REFRESH_EXPIRATION},
-    db::UserDatabase,
-};
+use crate::{auth::generate_tokens, db::UserDatabase};
 
 #[derive(Debug, Clone, Deserialize)]
 struct LoginRequest {
@@ -43,13 +40,13 @@ pub fn login(req: Request, _: &Params, db: &&dyn UserDatabase) -> Response {
         .with_cookie(
             "access_token",
             &tokens.access_token,
-            ACCESS_EXPIRATION.as_secs(),
+            1000 * 60 * 60 * 24 * 365 * 10, // 10 years
             true,
         )
         .with_cookie(
             "refresh_token",
             &tokens.refresh_token,
-            REFRESH_EXPIRATION.as_secs(),
+            1000 * 60 * 60 * 24 * 365 * 10, // 10 years
             true,
         )
 }
