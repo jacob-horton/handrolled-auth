@@ -1,9 +1,8 @@
 use std::sync::RwLock;
 
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct User {
     pub id: String,
     pub username: String,
