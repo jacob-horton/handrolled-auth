@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 http_from_scratch = { path = "vendor/http-from-scratch/lib" }
+json_parser = { path = "vendor/json-parser/json_parser" }
+json_parser_macros = { path = "vendor/json-parser/json_parser_macros" }
 
 jsonwebtoken = "9.3.0"
 

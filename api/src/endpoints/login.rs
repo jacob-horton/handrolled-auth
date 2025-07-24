@@ -3,18 +3,19 @@ use http_from_scratch::{
     response::{Response, Status},
     router::Params,
 };
-use serde::Deserialize;
+use json_parser::*;
+use json_parser_macros::JsonDeserialise;
 
 use crate::{auth::generate_tokens, db::UserDatabase};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, JsonDeserialise)]
 struct LoginRequest {
     username: String,
     password: String,
 }
 
 pub fn login(req: Request, _: &Params, db: &&dyn UserDatabase) -> Response {
-    let decoded: LoginRequest = serde_json::from_str(&req.body.unwrap()).unwrap();
+    let decoded: LoginRequest = Parser::parse(&req.body.unwrap()).unwrap();
 
     let user = match db.get_user_by_username(&decoded.username) {
         Some(user) => {

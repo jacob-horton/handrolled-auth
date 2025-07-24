@@ -1,3 +1,7 @@
 [submodule "api/vendor/http-from-scratch"]
 	path = api/vendor/http-from-scratch
 	url = git@github.com:jacob-horton/http-from-scratch
+
+[submodule "api/vendor/json-parser"]
+	path = api/vendor/json-parser
+	url = git@github.com:jacob-horton/json-parser
